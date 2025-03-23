@@ -46,7 +46,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 
 			BaseResponse response = new();
 			string adminUrl = ConvertToAdminUrl(createTopicData.ServiceUrl);
-			string topicPath = $"persistent/{createTopicData.Tenant}/{createTopicData.Namespace}/{createTopicData.Name}";
+			string topicPath = $"persistent/{createTopicData.Tenant}/{createTopicData.Namespace}/{createTopicData.TopicName}";
 			string topicPartitionsUrl = $"{adminUrl}/admin/v2/{topicPath}/partitions";
 
 			try
@@ -54,16 +54,16 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 				if (await TopicExists(topicPartitionsUrl))
 				{
 					response.IsSuccess = true;
-					response.Message = $"Topic '{createTopicData.Name}' already exists.";
+					response.Message = $"Topic '{createTopicData.TopicName}' already exists.";
 					return response;
 				}
 
 				await CreateTopicInPulsar(topicPartitionsUrl, createTopicData.NumPartitions);
 				await ConfigureRetention(createTopicData, adminUrl);
 
-				Console.WriteLine($"[INFO] Topic '{createTopicData.Name}' created successfully.");
+				Console.WriteLine($"[INFO] Topic '{createTopicData.TopicName}' created successfully.");
 				response.IsSuccess = true;
-				response.Message = $"Topic '{createTopicData.Name}' created successfully.";
+				response.Message = $"Topic '{createTopicData.TopicName}' created successfully.";
 			}
 			catch (HttpRequestException ex)
 			{

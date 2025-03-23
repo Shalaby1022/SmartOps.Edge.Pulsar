@@ -154,7 +154,7 @@ namespace Pulsar.Test.UnitTest
 			var topicData = new CreateTopicData(TestConstantValues.BROKER_URL, TestConstantValues.NEW_TOPIC) { NumPartitions = 1 };
 			var topicManager = CreateTopicManagerWithMock(HttpStatusCode.OK, HttpMethod.Put);
 			string adminUrl = ReflectionTestHelpers.InvokeProtectedMethod<string>(topicManager, "ConvertToAdminUrl", TestConstantValues.BROKER_URL);
-			string topicPath = $"persistent/{topicData.Tenant}/{topicData.Namespace}/{topicData.Name}";
+			string topicPath = $"persistent/{topicData.Tenant}/{topicData.Namespace}/{topicData.TopicName}";
 			string topicPartitionsUrl = $"{adminUrl}/admin/v2/{topicPath}/partitions";
 
 			await ReflectionTestHelpers.InvokePrivateMethodAsync(topicManager, "CreateTopicInPulsar", topicPartitionsUrl, topicData.NumPartitions);
@@ -170,7 +170,7 @@ namespace Pulsar.Test.UnitTest
 			var topicData = new CreateTopicData(TestConstantValues.BROKER_URL, TestConstantValues.NEW_TOPIC) { NumPartitions = 1 };
 			var topicManager = CreateTopicManagerWithMock(HttpStatusCode.BadRequest, HttpMethod.Put, "Creation failed");
 			string adminUrl = ReflectionTestHelpers.InvokeProtectedMethod<string>(topicManager, "ConvertToAdminUrl", TestConstantValues.BROKER_URL);
-			string topicPath = $"persistent/{topicData.Tenant}/{topicData.Namespace}/{topicData.Name}";
+			string topicPath = $"persistent/{topicData.Tenant}/{topicData.Namespace}/{topicData.TopicName}";
 			string topicPartitionsUrl = $"{adminUrl}/admin/v2/{topicPath}/partitions";
 
 			// Act
