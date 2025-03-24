@@ -16,5 +16,9 @@ namespace SmartOps.Edge.Pulsar.BaseClasses.Contracts
 		void ConnectConsumer(ConsumerData consumerData, Action<IConsumer<byte[]>, Exception> errorHandler);
 		Task SubscribeAsync(string topic, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken);
 		Task<BaseResponse> AcknowledgeAsync(List<MessageId> messageIds); // Use DotPulsar.MessageId
+		Task<BaseResponse> AcknowledgeCumulativeAsync(MessageId messageId);
+		// New methods added based on ConsumerManager implementation
+		Task<BaseResponse> RedeliverUnacknowledgedMessagesAsync(IEnumerable<MessageId> messageIds);
+		Task<BaseResponse> RedeliverAllUnacknowledgedMessagesAsync();
 	}
 }

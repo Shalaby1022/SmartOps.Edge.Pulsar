@@ -2,9 +2,9 @@
 using SmartOps.Edge.Pulsar.BaseClasses.Contracts;
 using SmartOps.Edge.Pulsar.BaseClasses.Models;
 using SmartOps.Edge.Pulsar.Messages.Manager;
+using DotPulsar;
 using DotPulsar.Extensions;
 using System.Text;
-using DotPulsar;
 
 namespace ConsolePulsarTest
 {
@@ -16,7 +16,11 @@ namespace ConsolePulsarTest
 			var serviceCollection = new ServiceCollection();
 			serviceCollection.AddHttpClient();
 			serviceCollection.AddSingleton<ITopicManager, TopicManager>();
-			serviceCollection.AddSingleton<IConsumersManager, ConsumerManager>();
+			serviceCollection.AddSingleton<IConsumersManager>(provider =>
+				new ConsumerManager(
+					null,
+					SubscriptionType.Shared,
+					messagePrefetchCount: 500)); // New: Set prefetch count
 
 			var serviceProvider = serviceCollection.BuildServiceProvider();
 			using var scope = serviceProvider.CreateScope();
@@ -70,33 +74,55 @@ namespace ConsolePulsarTest
 				Console.WriteLine($"Expected error: {ex.Message}");
 			}
 
-			// Test Case 5: Produce and consume a message
-			Console.WriteLine("\nTest Case 5: Produce and consume a message");
+			// Test Case 5: Produce and consume with enhanced features
+			Console.WriteLine("\nTest Case 5: Produce and consume with enhanced features");
 			try
 			{
 				var consumerData = new ConsumerData { SubscriptionName = "TestSubscription" };
 				consumerManager.ConnectConsumer(consumerData, (c, e) => Console.WriteLine($"[ERROR] Consumer error: {e.Message}"));
 
-				// Produce a message first
+				// Produce multiple messages
 				await using var client = PulsarClient.Builder()
 					.ServiceUrl(new Uri("pulsar://localhost:6650"))
 					.Build();
 				await using var producer = client.NewProducer(Schema.ByteArray)
 					.Topic("persistent://public/default/test-topic-1")
 					.Create();
-				await producer.Send(Encoding.UTF8.GetBytes("Hello Pulsar Test"));
-				Console.WriteLine("[INFO] Message produced to persistent://public/default/test-topic-1");
+				await producer.Send(Encoding.UTF8.GetBytes("Message 1: Success"));
+				await producer.Send(Encoding.UTF8.GetBytes("Message 2: Retry"));
+				await producer.Send(Encoding.UTF8.GetBytes("Message 3: Fail"));
+				Console.WriteLine("[INFO] Produced 3 messages to persistent://public/default/test-topic-1");
+				await Task.Delay(1000); // Ensure messages are available
 
-				// Consume the message with a longer timeout
-				var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)); // Increased to 10 seconds
+				// Consume with enhanced logic
+				var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+				int messageCount = 0;
 				await consumerManager.SubscribeAsync("persistent://public/default/test-topic-1",
 					async msg =>
 					{
 						if (string.IsNullOrEmpty(msg.ExceptionMessage))
 						{
+							messageCount++;
 							Console.WriteLine($"Received: {msg.Data} (Timestamp: {msg.UnixTimeStampMs})");
-							await consumerManager.AcknowledgeAsync(new List<DotPulsar.MessageId> { msg.MessageId });
-							cts.Cancel();
+
+							if (msg.Data.Contains("Success"))
+							{
+								await consumerManager.AcknowledgeAsync(new List<MessageId> { msg.MessageId });
+							}
+							else if (msg.Data.Contains("Retry"))
+							{
+								await consumerManager.RedeliverUnacknowledgedMessagesAsync(new List<MessageId> { msg.MessageId });
+							}
+							else if (msg.Data.Contains("Fail"))
+							{
+								// Don’t ack; redeliver all unacknowledged later
+							}
+
+							if (messageCount >= 3)
+							{
+								await consumerManager.RedeliverAllUnacknowledgedMessagesAsync();
+								cts.Cancel();
+							}
 						}
 						else
 						{

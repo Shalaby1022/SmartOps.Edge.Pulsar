@@ -14,19 +14,24 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 {
 	public class ConsumerManager : IConsumersManager
 	{
-		private IPulsarClient? _client;                         // Pulsar client instance
-		private IConsumer<byte[]>? _consumer;                   // Active consumer instance
-		private bool _stopSubs = false;                         // Flag to stop subscription loop
-		private string? _subscriptionName;                      // Subscription name
-		private readonly Action<IConsumer<byte[]>, Exception>? _errorHandler; // Readonly error handler
+		private IPulsarClient? _client;
+		private IConsumer<byte[]>? _consumer;
+		private bool _stopSubs = false;
+		private string? _subscriptionName;
+		private readonly Action<IConsumer<byte[]>, Exception>? _errorHandler;
+		private readonly SubscriptionType _subscriptionType;
+		private readonly uint _messagePrefetchCount; // New: Replaces ReceiverQueueSize
 
-		// Constructor to initialize readonly _errorHandler
-		public ConsumerManager(Action<IConsumer<byte[]>, Exception>? errorHandler = null)
+		public ConsumerManager(
+			Action<IConsumer<byte[]>, Exception>? errorHandler = null,
+			SubscriptionType subscriptionType = SubscriptionType.Exclusive,
+			uint messagePrefetchCount = 1000) // Default from docs
 		{
-			_errorHandler = errorHandler; // Set at construction, can be null
+			_errorHandler = errorHandler;
+			_subscriptionType = subscriptionType;
+			_messagePrefetchCount = messagePrefetchCount > 0 ? messagePrefetchCount : throw new ArgumentException("Message prefetch count must be positive.");
 		}
 
-		// Initialize client with consumer data
 		public void ConnectConsumer(ConsumerData consumerData, Action<IConsumer<byte[]>, Exception> errorHandler)
 		{
 			if (consumerData == null) throw new ArgumentNullException(nameof(consumerData));
@@ -38,7 +43,6 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 					.ServiceUrl(new Uri(consumerData.ServiceUrl))
 					.Build();
 				_subscriptionName = consumerData.SubscriptionName;
-				// Note: We don’t reassign _errorHandler here; it’s set in constructor
 				Console.WriteLine($"[INFO] Client connected to {consumerData.ServiceUrl}");
 			}
 			catch (Exception ex)
@@ -48,7 +52,6 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			}
 		}
 
-		// Subscribe to topic with StateChangedHandler attached
 		public async Task SubscribeAsync(string topic, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken)
 		{
 			if (_client == null) throw new InvalidOperationException("Client not connected.");
@@ -67,16 +70,17 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 					var consumerBuilder = _client.NewConsumer(Schema.ByteArray)
 						.SubscriptionName(_subscriptionName)
 						.Topic(topic)
-						.InitialPosition(SubscriptionInitialPosition.Earliest);
+						.InitialPosition(SubscriptionInitialPosition.Latest)
+						.SubscriptionType(_subscriptionType)
+						.MessagePrefetchCount(_messagePrefetchCount); // New: Set prefetch count
 
-					// Attach StateChangedHandler if _errorHandler exists
 					if (_errorHandler != null)
 					{
 						consumerBuilder.StateChangedHandler(new StateChangedHandler(_errorHandler));
 					}
 
 					_consumer = consumerBuilder.Create();
-					Console.WriteLine($"[INFO] Subscribed to topic: {topic}");
+					Console.WriteLine($"[INFO] Subscribed to topic: {topic} with {_subscriptionType}");
 				}
 
 				_stopSubs = false;
@@ -106,11 +110,10 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 					ExceptionMessage = ex.Message,
 					ErrorCode = ex is OperationCanceledException ? "REQUESTED_ABORTED" : "SUBSCRIBE_ERROR"
 				};
-				await callback(errorMessage);
+				await callback(errorMessage); // Fixed: Removed HAPPY
 			}
 		}
 
-		// Acknowledge messages
 		public async Task<BaseResponse> AcknowledgeAsync(List<MessageId> messageIds)
 		{
 			var response = new BaseResponse();
@@ -132,7 +135,71 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			return response;
 		}
 
-		// Cleanup resources
+		public async Task<BaseResponse> AcknowledgeCumulativeAsync(MessageId messageId)
+		{
+			var response = new BaseResponse();
+			try
+			{
+				if (_consumer == null) throw new InvalidOperationException("Consumer not connected.");
+				if (_subscriptionType == SubscriptionType.Shared)
+					throw new InvalidOperationException("Cumulative acknowledgment is not supported in Shared subscription type.");
+				await _consumer.AcknowledgeCumulative(messageId, CancellationToken.None);
+				response.IsSuccess = true;
+				response.Message = "Messages acknowledged cumulatively";
+				Console.WriteLine($"[INFO] Cumulatively acknowledged up to message ID: {messageId}");
+			}
+			catch (Exception ex)
+			{
+				response.IsSuccess = false;
+				response.Message = $"Failed to acknowledge cumulatively: {ex.Message}";
+				response.ErrorCode = "ACK_CUMULATIVE_ERROR";
+				Console.WriteLine($"[ERROR] Cumulative acknowledgment failed: {ex.Message}");
+			}
+			return response;
+		}
+
+		public async Task<BaseResponse> RedeliverUnacknowledgedMessagesAsync(IEnumerable<MessageId> messageIds)
+		{
+			var response = new BaseResponse();
+			try
+			{
+				if (_consumer == null) throw new InvalidOperationException("Consumer not connected.");
+				await _consumer.RedeliverUnacknowledgedMessages(messageIds, CancellationToken.None);
+				response.IsSuccess = true;
+				response.Message = "Requested redelivery of unacknowledged messages";
+				Console.WriteLine($"[INFO] Requested redelivery for {messageIds.Count()} message(s)");
+			}
+			catch (Exception ex)
+			{
+				response.IsSuccess = false;
+				response.Message = $"Failed to redeliver messages: {ex.Message}";
+				response.ErrorCode = "REDELIVER_ERROR";
+				Console.WriteLine($"[ERROR] Redelivery failed: {ex.Message}");
+			}
+			return response;
+		}
+
+		public async Task<BaseResponse> RedeliverAllUnacknowledgedMessagesAsync()
+		{
+			var response = new BaseResponse();
+			try
+			{
+				if (_consumer == null) throw new InvalidOperationException("Consumer not connected.");
+				await _consumer.RedeliverUnacknowledgedMessages(CancellationToken.None);
+				response.IsSuccess = true;
+				response.Message = "Requested redelivery of all unacknowledged messages";
+				Console.WriteLine("[INFO] Requested redelivery of all unacknowledged messages");
+			}
+			catch (Exception ex)
+			{
+				response.IsSuccess = false;
+				response.Message = $"Failed to redeliver all messages: {ex.Message}";
+				response.ErrorCode = "REDELIVER_ALL_ERROR";
+				Console.WriteLine($"[ERROR] Redelivery of all messages failed: {ex.Message}");
+			}
+			return response;
+		}
+
 		public async ValueTask DisposeAsync()
 		{
 			if (_consumer != null)
@@ -150,7 +217,6 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		}
 	}
 
-	// Nested handler for consumer state changes
 	internal class StateChangedHandler : IHandleStateChanged<ConsumerStateChanged>
 	{
 		private readonly Action<IConsumer<byte[]>, Exception> _errorHandler;
