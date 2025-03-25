@@ -92,7 +92,7 @@ namespace ConsolePulsarTest
 				await producer.Send(Encoding.UTF8.GetBytes("Message 2: Retry"));
 				await producer.Send(Encoding.UTF8.GetBytes("Message 3: Fail"));
 				Console.WriteLine("[INFO] Produced 3 messages to persistent://public/default/test-topic-1");
-				await Task.Delay(1000); // Ensure messages are available
+				await Task.Delay(2000); // Ensure messages are available
 
 				// Consume with enhanced logic
 				var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
