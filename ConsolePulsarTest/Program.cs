@@ -14,6 +14,8 @@ namespace ConsolePulsarTest
 			var serviceCollection = new ServiceCollection();
 			serviceCollection.AddHttpClient();
 			serviceCollection.AddSingleton<ITopicManager, TopicManager>();
+			serviceCollection.AddSingleton<IProducerManager, PulsarProducerManager>();
+
 
 			var serviceProvider = serviceCollection.BuildServiceProvider();
 			using var scope = serviceProvider.CreateScope();
@@ -68,9 +70,34 @@ namespace ConsolePulsarTest
 			}
 
 			// Dispose async
-			if (topicManager is IAsyncDisposable asyncDisposable)
+			// if (topicManager is IAsyncDisposable asyncDisposable)
+			// {
+			// 	await asyncDisposable.DisposeAsync();
+			// }
+			// Test Case 5: Produce a message to an existing topic
+			Console.WriteLine("\nTest Case 5: Produce message to 'test-topic-1'");
+			var producerManager = scope.ServiceProvider.GetRequiredService<IProducerManager>();
+
+			var producerData = new ProducerData
 			{
-				await asyncDisposable.DisposeAsync();
+				ServiceUrl = "pulsar://localhost:6650",
+				TopicName = "test-topic-1",
+				ProducerName = "console-test-producer",
+				MaxPendingMessages = 1000,
+				SendTimeoutMs = 30000,
+				EnableBatching = true
+			};
+
+			// Connect the producer
+			await producerManager.ConnectProducer(producerData);
+
+			// Publish a message
+			var messageToSend = "Hello from ConsolePulsarTest!";
+			await producerManager.PublishAsync("test-topic-1", messageToSend, correlationId: Guid.NewGuid().ToString());
+			while (true)
+			{
+				Console.WriteLine("Producer is alive...");
+				await Task.Delay(5000); // Keeps the app/process running
 			}
 		}
 

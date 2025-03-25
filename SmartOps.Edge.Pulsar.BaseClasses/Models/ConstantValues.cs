@@ -41,10 +41,14 @@
 		/// Error code for retrieving all topics failure in Pulsar.
 		/// </summary>
 		public const string RETRIEVE_ALL_TOPICS_ERROR = "Err-PLS-1008";
-
 		/// <summary>
 		/// General error code when a process is canceled or aborted.
 		/// </summary>
 		public const string REQUESTED_ABORTED = "Err-COM-0499";
+		/// <summary>
+		/// Error code for message publishing failure.
+		/// </summary>
+		public const string PRODUCE_MESSAGE_ERROR = "Err-PLS-1001";
+
 	}
 }
