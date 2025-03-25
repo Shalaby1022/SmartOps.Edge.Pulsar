@@ -74,4 +74,3 @@ using System.Text.RegularExpressions;
 			TopicName = name;
 		}
 	}
-
