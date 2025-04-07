@@ -5,6 +5,7 @@ using SmartOps.Edge.Pulsar.Messages.Manager;
 using DotPulsar;
 using DotPulsar.Extensions;
 using System.Text;
+using SmartOps.Edge.Pulsar.Bus.Messages.Manager;
 
 namespace ConsolePulsarTest
 {
@@ -20,8 +21,8 @@ namespace ConsolePulsarTest
 			serviceCollection.AddSingleton<IConsumersManager>(provider =>
 				new ConsumerManager(
 					null,
-					SubscriptionType.Shared,
-					messagePrefetchCount: 500)); // New: Set prefetch count
+					SubscriptionType.Shared, // Default remains Shared for other tests
+					messagePrefetchCount: 500));
 			var serviceProvider = serviceCollection.BuildServiceProvider();
 			using var scope = serviceProvider.CreateScope();
 			var topicManager = scope.ServiceProvider.GetRequiredService<ITopicManager>();
@@ -78,23 +79,28 @@ namespace ConsolePulsarTest
 			Console.WriteLine("\nTest Case 5: Produce and consume with enhanced features");
 			try
 			{
-				var consumerData = new ConsumerData { SubscriptionName = "TestSubscription" };
+				var consumerData = new ConsumerData { SubscriptionName = "TestSub1" };
 				consumerManager.ConnectConsumer(consumerData, (c, e) => Console.WriteLine($"[ERROR] Consumer error: {e.Message}"));
 
-				// Produce multiple messages
-				await using var client = PulsarClient.Builder()
-					.ServiceUrl(new Uri("pulsar://localhost:6650"))
-					.Build();
-				await using var producer = client.NewProducer(Schema.ByteArray)
-					.Topic("persistent://public/default/test-topic-1")
-					.Create();
-				await producer.Send(Encoding.UTF8.GetBytes("Message 1: Success"));
-				await producer.Send(Encoding.UTF8.GetBytes("Message 2: Retry"));
-				await producer.Send(Encoding.UTF8.GetBytes("Message 3: Fail"));
-				Console.WriteLine("[INFO] Produced 3 messages to persistent://public/default/test-topic-1");
-				await Task.Delay(2000); // Ensure messages are available
+				var producerManager = scope.ServiceProvider.GetRequiredService<IProducerManager>();
+				var producerData = new ProducerData
+				{
+					ServiceUrl = "pulsar://localhost:6650",
+					TopicName = "persistent://public/default/test-topic-1",
+					ProducerName = "console-test-producer",
+					MaxPendingMessages = 1000,
+					SendTimeoutMs = 30000,
+					EnableBatching = true
+				};
 
-				// Consume with enhanced logic
+				await producerManager.ConnectProducer(producerData);
+
+				await producerManager.PublishAsync("persistent://public/default/test-topic-1", "Message 1: Success", correlationId: Guid.NewGuid().ToString());
+				await producerManager.PublishAsync("persistent://public/default/test-topic-1", "Message 2: Retry", correlationId: Guid.NewGuid().ToString());
+				await producerManager.PublishAsync("persistent://public/default/test-topic-1", "Message 3: Fail", correlationId: Guid.NewGuid().ToString());
+				Console.WriteLine("[INFO] Produced 3 messages to persistent://public/default/test-topic-1");
+				await Task.Delay(2000);
+
 				var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 				int messageCount = 0;
 				await consumerManager.SubscribeAsync("persistent://public/default/test-topic-1",
@@ -137,50 +143,79 @@ namespace ConsolePulsarTest
 				Console.WriteLine($"Test Case 5 failed: {ex.Message}");
 			}
 
-			// Dispose async
-			// if (topicManager is IAsyncDisposable asyncDisposable)
-			// {
-			// 	await asyncDisposable.DisposeAsync();
-			// }
-			// Test Case 5: Produce a message to an existing topic
-			Console.WriteLine("\nTest Case 5: Produce message to 'test-topic-1'");
-			var producerManager = scope.ServiceProvider.GetRequiredService<IProducerManager>();
-
-			var producerData = new ProducerData
+			// Test Case 6: Batch Consuming with Full Criteria and Enhancements
+			Console.WriteLine("\nTest Case 6: Batch Consuming with Full Criteria and Enhancements");
+			try
 			{
-				ServiceUrl = "pulsar://localhost:6650",
-				TopicName = "test-topic-1",
-				ProducerName = "console-test-producer",
-				MaxPendingMessages = 1000,
-				SendTimeoutMs = 30000,
-				EnableBatching = true
-			};
+				// Ensure consumer is connected
+				var consumerDataSetup = new ConsumerData { SubscriptionName = "TestSubBatch" };
+				consumerManager.ConnectConsumer(consumerDataSetup, (c, e) => Console.WriteLine($"[ERROR] Consumer error: {e.Message}"));
 
-			// Connect the producer
-			await producerManager.ConnectProducer(producerData);
+				// Produce additional messages for batch testing
+				var producerManager = scope.ServiceProvider.GetRequiredService<IProducerManager>();
+				var producerData = new ProducerData
+				{
+					ServiceUrl = "pulsar://localhost:6650",
+					TopicName = "persistent://public/default/test-topic-1",
+					ProducerName = "batch-test-producer",
+					MaxPendingMessages = 1000,
+					SendTimeoutMs = 30000,
+					EnableBatching = true
+				};
+				await producerManager.ConnectProducer(producerData);
 
-			// Publish a message
-			var messageToSend = "Hello from ConsolePulsarTest!";
-			await producerManager.PublishAsync("test-topic-1", messageToSend, correlationId: Guid.NewGuid().ToString());
-			while (true)
+				// Produce 20 small messages and 1 large message
+				for (int i = 1; i <= 20; i++)
+				{
+					await producerManager.PublishAsync("persistent://public/default/test-topic-1", $"Batch Message {i}", correlationId: Guid.NewGuid().ToString());
+				}
+				await producerManager.PublishAsync("persistent://public/default/test-topic-1", new string('X', 2 * 1024 * 1024), correlationId: Guid.NewGuid().ToString()); // 2MB
+				Console.WriteLine("[INFO] Produced 20 small messages and 1 large (2MB) message for batch test");
+				await Task.Delay(2000); // Ensure messages are available
+
+				// Batch consuming test
+				// EDIT START: Changed to Exclusive for cumulative ack, set MaxNumBytes to 1MB
+				var consumerData = new ConsumerData
+				{
+					ServiceUrl = "pulsar://localhost:6650",
+					SubscriptionName = "TestSubBatch",
+					TopicName = "persistent://public/default/test-topic-1",
+					BatchSize = 10,
+					MaxNumBytes = 1024 * 1024, // 1MB
+					TimeoutMs = 10000, // 10 seconds
+					SubscriptionType = SubscriptionType.Exclusive // Enable cumulative acknowledgment
+				};
+				// EDIT END
+				var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+				var batch = await consumerManager.ProcessBatchAsync(consumerData, cts.Token);
+
+				Console.WriteLine($"Received batch of {batch.Count} messages:");
+				foreach (var msg in batch)
+				{
+					var displayData = msg.Data.Length > 20 ? $"{msg.Data.Substring(0, 20)}..." : msg.Data;
+					Console.WriteLine($" - {displayData} (Size: {Encoding.UTF8.GetByteCount(msg.Data)} bytes, TS: {msg.UnixTimeStampMs})");
+				}
+			}
+			catch (Exception ex)
 			{
-				Console.WriteLine("Producer is alive...");
-				await Task.Delay(5000); // Keeps the app/process running
+				Console.WriteLine($"Test Case 6 failed: {ex.Message}");
+			}
+
+			// Cleanup and keep console alive
+			Console.WriteLine("\nPress any key to exit.");
+			Console.ReadKey();
 			if (topicManager is IAsyncDisposable asyncDisposableTopic)
 			{
 				await asyncDisposableTopic.DisposeAsync();
 			}
 			await consumerManager.DisposeAsync();
 
-			Console.WriteLine("Press any key to exit.");
-			Console.ReadKey();
-		}
-
-		static void PrintResponse(BaseResponse response)
-		{
-			Console.WriteLine(response.IsSuccess
-				? $"Success: {response.Message}"
-				: $"Failed: {response.Message} (Code: {response.ErrorCode})");
+			static void PrintResponse(BaseResponse response)
+			{
+				Console.WriteLine(response.IsSuccess
+					? $"Success: {response.Message}"
+					: $"Failed: {response.Message} (Code: {response.ErrorCode})");
+			}
 		}
 	}
 }
