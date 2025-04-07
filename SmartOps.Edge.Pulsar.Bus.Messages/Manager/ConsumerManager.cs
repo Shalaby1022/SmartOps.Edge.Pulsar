@@ -7,7 +7,7 @@ using System.Buffers;
 using System.Text;
 
 
-namespace SmartOps.Edge.Pulsar.Messages.Manager
+namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 {
 	public class ConsumerManager : IConsumersManager
 	{
@@ -43,8 +43,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			_messagePrefetchCount = messagePrefetchCount > 0 ? messagePrefetchCount : throw new ArgumentException("Message prefetch count must be positive.");
 		}
 		/// <summary>
-		/// Initializes the connection to a Pulsar broker using the specified consumer data and error handler.
-		/// This method must be called before subscribing to topics or consuming messages.
+		/// Initializes the connection to a Pulsar broker
 		/// </summary>
 		/// <param name="consumerData">The configuration data for the consumer, including the service URL and subscription name.</param>
 		/// <param name="errorHandler">A callback function to handle errors that occur during connection or consumer operation.</param>
@@ -52,10 +51,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		/// <exception cref="ArgumentException">Thrown when <paramref name="consumerData.SubscriptionName"/> is null or empty.</exception>
 		/// <exception cref="UriFormatException">Thrown when <paramref name="consumerData.ServiceUrl"/> is not a valid URI.</exception>
 		/// <exception cref="PulsarClientException">Thrown when the connection to the Pulsar broker fails (e.g., network issues or broker unavailable).</exception>
-		/// <remarks>
-		/// If a client is already initialized (e.g., via the testing constructor), this method reuses it without creating a new one.
-		/// The subscription name is stored for use in subsequent subscription operations.
-		/// </remarks>
+
 		public void ConnectConsumer(ConsumerData consumerData, Action<IConsumer<byte[]>, Exception> errorHandler)
 		{
 			if (consumerData == null) throw new ArgumentNullException(nameof(consumerData));
@@ -89,11 +85,6 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		/// <exception cref="InvalidOperationException">Thrown when the Pulsar client is not connected (i.e., <see cref="ConnectConsumer"/> has not been called).</exception>
 		/// <exception cref="ArgumentException">Thrown when <paramref name="topic"/> is null or empty.</exception>
 		/// <exception cref="PulsarClientException">Thrown when subscription or message consumption fails due to broker issues.</exception>
-		/// <remarks>
-		/// If a consumer already exists for a different topic, it is disposed before creating a new one. The consumer is reused if the topic matches.
-		/// Messages are consumed from the latest position by default, and the subscription type and prefetch count are applied from the constructor settings.
-		/// Errors during subscription or consumption are passed to the <paramref name="callback"/> as a <see cref="SubscribeMessage{T}"/> with <c>ExceptionMessage</c> and <c>ErrorCode</c> set.
-		/// </remarks>
 		public async Task SubscribeAsync(string topic, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken)
 		{
 			if (_client == null) throw new InvalidOperationException("Client not connected.");
@@ -157,17 +148,164 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		}
 
 		/// <summary>
+		/// Asynchronously processes a batch of messages from a Pulsar topic, adhering to specified size, byte, and timeout constraints.
+		/// </summary>
+		/// <param name="consumerData">The configuration data for the consumer, including service URL, subscription name, topic name, batch size, max bytes, and timeout.</param>
+		/// <param name="cancellationToken">A token to cancel the batch processing operation. Defaults to <see cref="CancellationToken.None"/>.</param>
+		/// <returns>A <see cref="Task"/> that resolves to a list of processed <see cref="SubscribeMessage{string}"/> objects containing message data and metadata.</returns>
+		/// <exception cref="ArgumentNullException">Thrown when <paramref name="consumerData"/> is null.</exception>
+		/// <exception cref="ArgumentException">Thrown when required fields in <paramref name="consumerData"/> (ServiceUrl, SubscriptionName, TopicName) are null or empty, or when BatchSize, MaxNumBytes, or TimeoutMs have invalid values.</exception>
+		/// <exception cref="PulsarClientException">Thrown when connection to the Pulsar broker fails or message consumption encounters broker-related issues.</exception>
+		/// <exception cref="OperationCanceledException">Thrown when the operation is canceled via <paramref name="cancellationToken"/> or the timeout specified in <paramref name="consumerData.TimeoutMs"/> is reached.</exception>
+
+		public async Task<List<SubscribeMessage<string>>> ProcessBatchAsync(ConsumerData consumerData, CancellationToken cancellationToken = default)
+		{
+			if (consumerData == null) throw new ArgumentNullException(nameof(consumerData));
+			if (string.IsNullOrEmpty(consumerData.ServiceUrl)) throw new ArgumentException("Service URL is required", nameof(consumerData.ServiceUrl));
+			if (string.IsNullOrEmpty(consumerData.SubscriptionName)) throw new ArgumentException("Subscription name is required", nameof(consumerData.SubscriptionName));
+			if (string.IsNullOrEmpty(consumerData.TopicName)) throw new ArgumentException("Topic name is required", nameof(consumerData.TopicName));
+			if (consumerData.BatchSize <= 0) throw new ArgumentException("Batch size must be positive", nameof(consumerData.BatchSize));
+			if (consumerData.MaxNumBytes <= 0) throw new ArgumentException("Max number of bytes must be positive", nameof(consumerData.MaxNumBytes));
+			if (consumerData.TimeoutMs < 0) throw new ArgumentException("Timeout must be non-negative", nameof(consumerData.TimeoutMs));
+
+			try
+			{
+				if (_client == null)
+				{
+					ConnectConsumer(consumerData, _errorHandler ?? ((consumer, ex) => Console.WriteLine($"[ERROR] Consumer error: {ex.Message}")));
+				}
+
+				if (_consumer == null || _consumer.Topic != consumerData.TopicName || _consumer.SubscriptionName != consumerData.SubscriptionName)
+				{
+					if (_consumer != null)
+					{
+						await _consumer.DisposeAsync();
+						Console.WriteLine("[INFO] Previous consumer disposed");
+					}
+
+					var consumerBuilder = _client.NewConsumer(Schema.ByteArray)
+						.SubscriptionName(consumerData.SubscriptionName)
+						.Topic(consumerData.TopicName)
+						.InitialPosition(SubscriptionInitialPosition.Latest)
+						.SubscriptionType(consumerData.SubscriptionType)
+						.MessagePrefetchCount((uint)Math.Min(consumerData.BatchSize, _messagePrefetchCount));
+
+					if (_errorHandler != null)
+					{
+						consumerBuilder.StateChangedHandler(new StateChangedHandler(_errorHandler));
+					}
+
+					_consumer = consumerBuilder.Create();
+					Console.WriteLine($"[INFO] Subscribed to topic: {consumerData.TopicName} with subscription: {consumerData.SubscriptionName}");
+				}
+
+				if (consumerData.SubscriptionType == SubscriptionType.Shared)
+				{
+					Console.WriteLine("[WARN] Cumulative acknowledgment not supported with Shared subscription; using individual acks");
+				}
+
+				var messages = new List<SubscribeMessage<string>>(consumerData.BatchSize);
+				int effectiveBatchSize = consumerData.BatchSize;
+				long totalBytes = 0;
+				const long memoryThreshold = 1024 * 1024 * 500; // 500MB , I just add it to prevent memory overload
+				using var timeoutCts = new CancellationTokenSource(consumerData.TimeoutMs);
+				using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+				await foreach (var message in _consumer.Messages().WithCancellation(linkedCts.Token))
+				{
+					if (linkedCts.Token.IsCancellationRequested)
+					{
+						Console.WriteLine("[INFO] Batch processing stopped: " +
+							(timeoutCts.IsCancellationRequested ? "timeout reached" : "canceled by caller"));
+						break;
+					}
+					if (messages.Count >= effectiveBatchSize)
+					{
+						Console.WriteLine($"[INFO] Reached effective batch size limit: {effectiveBatchSize}");
+						break;
+					}
+
+					long memoryUsed = GC.GetTotalMemory(false);
+					if (memoryUsed > memoryThreshold)
+					{
+						effectiveBatchSize = Math.Max(1, effectiveBatchSize / 2);
+						Console.WriteLine($"[WARN] Memory usage high ({memoryUsed / (1024 * 1024)}MB > {memoryThreshold / (1024 * 1024)}MB), reduced effective batch size to {effectiveBatchSize}");
+						break;
+					}
+
+					var contentBytes = message.Data.ToArray();
+					var content = Encoding.UTF8.GetString(contentBytes);
+					totalBytes += contentBytes.Length;
+					if (totalBytes > consumerData.MaxNumBytes)
+					{
+						Console.WriteLine($"[INFO] Exceeded max bytes ({totalBytes} > {consumerData.MaxNumBytes}), stopping batch");
+						break;
+					}
+
+					if (string.IsNullOrEmpty(content))
+					{
+						Console.WriteLine("[WARN] Empty message detected, skipping");
+						continue;
+					}
+
+					var processedContent = content.Trim(); // left for a debate with hady coz it's depend on nature of the message that "pulsar may detect leading and trailing whitespace characters as noise from producer" but the question is what if the message payload has trailed whitespace for example this will transalte it into a very diff msg.  
+					var subscribeMessage = new SubscribeMessage<string>
+					{
+						Data = processedContent,
+						Topic = _consumer.Topic,
+						MessageId = message.MessageId,
+						UnixTimeStampMs = (long)message.PublishTime
+					};
+
+					messages.Add(subscribeMessage);
+					Console.WriteLine($"[INFO] Processed message {messages.Count}/{effectiveBatchSize} from {_consumer.Topic}, total bytes: {totalBytes}");
+				}
+
+				if (messages.Count > 0)
+				{
+					try
+					{
+						// CHANGED: Use consumerData.SubscriptionType for acknowledgment
+						if (consumerData.SubscriptionType != SubscriptionType.Shared)
+						{
+							var lastMessageId = messages.Last().MessageId;
+							await _consumer.AcknowledgeCumulative(lastMessageId, cancellationToken);
+							Console.WriteLine($"[INFO] Acknowledged {messages.Count} messages cumulatively up to {lastMessageId}");
+						}
+						else
+						{
+							var messageIds = messages.Select(m => m.MessageId).ToList();
+							await _consumer.Acknowledge(messageIds, cancellationToken);
+							Console.WriteLine($"[INFO] Individually acknowledged {messages.Count} messages");
+						}
+					}
+					catch (Exception ackEx)
+					{
+						Console.WriteLine($"[ERROR] Acknowledgment failed: {ackEx.Message}. Returning processed messages anyway");
+					}
+				}
+				else
+				{
+					Console.WriteLine("[INFO] No messages processed in this batch");
+				}
+
+				return messages;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] Failed to process batch: {ex.Message}");
+				throw;
+			}
+		}
+
+		/// <summary>
 		/// Asynchronously acknowledges a list of messages as processed by the consumer, informing the Pulsar broker they do not need to be redelivered.
 		/// </summary>
-		/// <param name="messageIds">A list of message identifiers to acknowledge.</param>
+		/// <param name="messageIds">A list of message identifiers to acknowledge, marking them as successfully processed.</param>
 		/// <returns>A <see cref="Task{TResult}"/> that resolves to a <see cref="BaseResponse"/> indicating whether the acknowledgment succeeded or failed.</returns>
 		/// <exception cref="InvalidOperationException">Thrown when the consumer is not connected (i.e., <see cref="SubscribeAsync"/> has not been called or the consumer was disposed).</exception>
 		/// <exception cref="ArgumentNullException">Thrown when <paramref name="messageIds"/> is null (handled implicitly by <see cref="IConsumer{T}.Acknowledge"/>).</exception>
 		/// <exception cref="PulsarClientException">Thrown when the acknowledgment fails due to broker issues or consumer state (e.g., closed connection).</exception>
-		/// <remarks>
-		/// This method requires an active consumer, established via <see cref="SubscribeAsync"/>. On success, the <see cref="BaseResponse"/> has <c>IsSuccess</c> set to <c>true</c>
-		/// and a message indicating the number of messages acknowledged. On failure, it includes an error message and sets <c>ErrorCode</c> to "ACK_ERROR".
-		/// </remarks>
 		public async Task<BaseResponse> AcknowledgeAsync(List<MessageId> messageIds)
 		{
 			var response = new BaseResponse();
@@ -188,7 +326,15 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			}
 			return response;
 		}
-
+		/// <summary>
+		/// Asynchronously acknowledges all messages up to and including the specified message ID in a cumulative manner, restricted to non-shared subscription types.
+		/// </summary>
+		/// <param name="messageId">The message identifier up to which all prior messages in the subscription will be acknowledged.</param>
+		/// <returns>A <see cref="Task{TResult}"/> that resolves to a <see cref="BaseResponse"/> indicating whether the cumulative acknowledgment succeeded or failed.</returns>
+		/// <exception cref="InvalidOperationException">Thrown when the consumer is not connected (i.e., <see cref="SubscribeAsync"/> has not been called or the consumer was disposed),
+		/// or if the subscription type is <see cref="SubscriptionType.Shared"/>, which does not support cumulative acknowledgment.</exception>
+		/// <exception cref="ArgumentNullException">Thrown when <paramref name="messageId"/> is null (handled implicitly by <see cref="IConsumer{T}.AcknowledgeCumulative"/>).</exception>
+		/// <exception cref="PulsarClientException">Thrown when the cumulative acknowledgment fails due to broker issues or consumer state (e.g., closed connection).</exception>
 		public async Task<BaseResponse> AcknowledgeCumulativeAsync(MessageId messageId)
 		{
 			var response = new BaseResponse();
@@ -211,6 +357,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			}
 			return response;
 		}
+
 		/// <summary>
 		/// Asynchronously requests the Pulsar broker to redeliver specific unacknowledged messages identified by their message IDs,
 		/// allowing the consumer to retry processing them.
@@ -220,12 +367,6 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		/// <exception cref="InvalidOperationException">Thrown when the consumer is not connected (i.e., <see cref="SubscribeAsync"/> has not been called or the consumer was disposed).</exception>
 		/// <exception cref="ArgumentNullException">Thrown when <paramref name="messageIds"/> is null (handled implicitly by <see cref="IConsumer{T}.RedeliverUnacknowledgedMessages"/>).</exception>
 		/// <exception cref="PulsarClientException">Thrown when the redelivery request fails due to broker issues or consumer state (e.g., closed connection).</exception>
-		/// <remarks>
-		/// This method requires an active consumer established via <see cref="SubscribeAsync"/>. It targets only the specified <paramref name="messageIds"/>,
-		/// unlike <see cref="RedeliverAllUnacknowledgedMessagesAsync"/>, which affects all unacknowledged messages. On success, the <see cref="BaseResponse"/>
-		/// has <c>IsSuccess</c> set to <c>true</c> and a message indicating the redelivery request was sent. On failure, it includes an error message and sets
-		/// <c>ErrorCode</c> to "REDELIVER_ERROR". The redelivered messages will be reprocessed through the existing subscription.
-		/// </remarks>
 		public async Task<BaseResponse> RedeliverUnacknowledgedMessagesAsync(IEnumerable<MessageId> messageIds)
 		{
 			var response = new BaseResponse();
@@ -280,6 +421,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			}
 			return response;
 		}
+
 		/// <summary>
 		/// Asynchronously disposes of the <see cref="ConsumerManager"/> resources, closing and releasing the consumer and client connections to the Pulsar broker.
 		/// </summary>

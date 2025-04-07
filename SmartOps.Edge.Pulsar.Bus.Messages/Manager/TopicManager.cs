@@ -101,7 +101,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			Console.WriteLine($"[DEBUG] Creating topic: PUT {topicPartitionsUrl} with {numPartitions} partitions");
 
 			var requestContent = new StringContent(numPartitions.ToString(), Encoding.UTF8, "application/json");
-			var createResponse = await _httpClient.PutAsync(topicPartitionsUrl, requestContent);
+			using var createResponse = await _httpClient.PutAsync(topicPartitionsUrl, requestContent);
 
 			if (!createResponse.IsSuccessStatusCode)
 			{
@@ -181,7 +181,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		/// </summary>
 		protected static string ConvertToAdminUrl(string serviceUrl)
 		{
-			return serviceUrl.Replace("pulsar://", "http://").Replace(":6650", ":8081");
+			return serviceUrl.Replace("pulsar://", "http://").Replace(":6650", ":8080");
 		}
 		#endregion Utility Methods
 

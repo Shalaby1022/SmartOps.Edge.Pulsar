@@ -221,13 +221,19 @@ var assemblies = [
   {
     "name": "SmartOps.Edge.Pulsar.BaseClasses",
     "classes": [
-      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.BaseResponse", "rp": "SmartOps.Edge.Pulsar.BaseClasses_BaseResponse.html", "cl": 3, "ucl": 0, "cal": 3, "tl": 10, "cb": 0, "tb": 0, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
-      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.CreateTopicData", "rp": "SmartOps.Edge.Pulsar.BaseClasses_CreateTopicData.html", "cl": 17, "ucl": 3, "cal": 20, "tl": 63, "cb": 4, "tb": 6, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.BaseResponse", "rp": "SmartOps.Edge.Pulsar.BaseClasses_BaseResponse.html", "cl": 3, "ucl": 0, "cal": 3, "tl": 23, "cb": 0, "tb": 0, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.ConsumerData", "rp": "SmartOps.Edge.Pulsar.BaseClasses_ConsumerData.html", "cl": 7, "ucl": 0, "cal": 7, "tl": 58, "cb": 0, "tb": 0, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.CreateTopicData", "rp": "SmartOps.Edge.Pulsar.BaseClasses_CreateTopicData.html", "cl": 17, "ucl": 3, "cal": 20, "tl": 76, "cb": 4, "tb": 6, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.ProducerData", "rp": "SmartOps.Edge.Pulsar.BaseClasses_ProducerData.html", "cl": 0, "ucl": 6, "cal": 6, "tl": 36, "cb": 0, "tb": 0, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.BaseClasses.Models.SubscribeMessage<T>", "rp": "SmartOps.Edge.Pulsar.BaseClasses_SubscribeMessage_1.html", "cl": 11, "ucl": 0, "cal": 11, "tl": 52, "cb": 0, "tb": 0, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
     ]},
   {
     "name": "SmartOps.Edge.Pulsar.Bus.Messages",
     "classes": [
-      { "name": "SmartOps.Edge.Pulsar.Messages.Manager.TopicManager", "rp": "SmartOps.Edge.Pulsar.Bus.Messages_TopicManager.html", "cl": 90, "ucl": 12, "cal": 102, "tl": 394, "cb": 21, "tb": 28, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "PulsarProducerManager", "rp": "SmartOps.Edge.Pulsar.Bus.Messages_PulsarProducerManager.html", "cl": 0, "ucl": 58, "cal": 58, "tl": 89, "cb": 0, "tb": 16, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.Bus.Messages.Manager.ConsumerManager", "rp": "SmartOps.Edge.Pulsar.Bus.Messages_ConsumerManager.html", "cl": 197, "ucl": 91, "cal": 288, "tl": 961, "cb": 67, "tb": 94, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.Bus.Messages.Manager.StateChangedHandler", "rp": "SmartOps.Edge.Pulsar.Bus.Messages_StateChangedHandler.html", "cl": 0, "ucl": 12, "cal": 12, "tl": 961, "cb": 0, "tb": 4, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
+      { "name": "SmartOps.Edge.Pulsar.Messages.Manager.TopicManager", "rp": "SmartOps.Edge.Pulsar.Bus.Messages_TopicManager.html", "cl": 90, "ucl": 12, "cal": 102, "tl": 194, "cb": 21, "tb": 28, "cm": 0, "fcm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "mfch": [], "hc": [], "metrics": { } },
     ]},
 ];
 
@@ -236,9 +242,35 @@ var metrics = [{ "name": "Crap Score", "abbreviation": "crp", "explanationUrl": 
 var historicCoverageExecutionTimes = [];
 
 var riskHotspotMetrics = [
+      { "name": "Crap Score", "explanationUrl": "https://googletesting.blogspot.de/2011/02/this-code-is-crap.html" },
+      { "name": "Cyclomatic complexity", "explanationUrl": "https://en.wikipedia.org/wiki/Cyclomatic_complexity" },
 ];
 
 var riskHotspots = [
+  {
+    "assembly": "SmartOps.Edge.Pulsar.Bus.Messages", "class": "SmartOps.Edge.Pulsar.Bus.Messages.Manager.ConsumerManager", "reportPath": "SmartOps.Edge.Pulsar.Bus.Messages_ConsumerManager.html", "methodName": "ProcessBatchAsync()", "methodShortName": "ProcessBatchAsync()", "fileIndex": 0, "line": 629,
+    "metrics": [
+      { "value": 211, "exceeded": true },
+      { "value": 52, "exceeded": true },
+    ]},
+  {
+    "assembly": "SmartOps.Edge.Pulsar.Bus.Messages", "class": "PulsarProducerManager", "reportPath": "SmartOps.Edge.Pulsar.Bus.Messages_PulsarProducerManager.html", "methodName": "Dispose()", "methodShortName": "Dispose()", "fileIndex": 0, "line": 78,
+    "metrics": [
+      { "value": 42, "exceeded": true },
+      { "value": 6, "exceeded": false },
+    ]},
+  {
+    "assembly": "SmartOps.Edge.Pulsar.Bus.Messages", "class": "PulsarProducerManager", "reportPath": "SmartOps.Edge.Pulsar.Bus.Messages_PulsarProducerManager.html", "methodName": "PublishAsync()", "methodShortName": "PublishAsync()", "fileIndex": 0, "line": 43,
+    "metrics": [
+      { "value": 42, "exceeded": true },
+      { "value": 6, "exceeded": false },
+    ]},
+  {
+    "assembly": "SmartOps.Edge.Pulsar.Bus.Messages", "class": "SmartOps.Edge.Pulsar.Bus.Messages.Manager.ConsumerManager", "reportPath": "SmartOps.Edge.Pulsar.Bus.Messages_ConsumerManager.html", "methodName": "SubscribeAsync()", "methodShortName": "SubscribeAsync()", "fileIndex": 0, "line": 429,
+    "metrics": [
+      { "value": 41, "exceeded": true },
+      { "value": 20, "exceeded": true },
+    ]},
 ];
 
 var branchCoverageAvailable = true;
