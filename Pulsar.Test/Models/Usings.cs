@@ -13,3 +13,4 @@ global using Pulsar.Test.Models;
 global using System.ComponentModel;
 global using System.Reflection;
 global using Xunit;
+global using DotPulsar;

@@ -1,4 +1,8 @@
-﻿namespace Pulsar.Test.UnitTest
+﻿using DotPulsar.Abstractions;
+using SmartOps.Edge.Pulsar.Bus.Messages.Manager;
+using System.Buffers;
+
+namespace Pulsar.Test.UnitTest
 {
 	public class ConsumerManagerTests : IDisposable
 	{
