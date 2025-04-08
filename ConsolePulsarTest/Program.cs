@@ -3,7 +3,6 @@ using SmartOps.Edge.Pulsar.BaseClasses.Contracts;
 using SmartOps.Edge.Pulsar.BaseClasses.Models;
 using SmartOps.Edge.Pulsar.Messages.Manager;
 using DotPulsar;
-using DotPulsar.Extensions;
 using System.Text;
 using SmartOps.Edge.Pulsar.Bus.Messages.Manager;
 
@@ -181,7 +180,7 @@ namespace ConsolePulsarTest
 					SubscriptionName = "TestSubBatch",
 					TopicName = "persistent://public/default/test-topic-1",
 					BatchSize = 10,
-					MaxNumBytes = 1024 * 1024, // 1MB
+					MaxNumBytes = 5 * 1024 * 1024, // 1MB
 					TimeoutMs = 10000, // 10 seconds
 					SubscriptionType = SubscriptionType.Exclusive // Enable cumulative acknowledgment
 				};
