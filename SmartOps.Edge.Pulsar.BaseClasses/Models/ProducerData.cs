@@ -36,12 +36,12 @@ namespace SmartOps.Edge.Pulsar.BaseClasses.Models{
     /// <summary>
     /// The maximum number of messages per batch. Defaults to 100.
     /// </summary>
-    public int BatchingMaxMessages { get; set; } = 100;
+    public int? BatchingMaxMessages { get; set; } = 100;
 
     /// <summary>
     /// The maximum time to wait before sending a batch (in ms). Defaults to 500.
     /// </summary>
-    public int BatchingMaxDelayMs { get; set; } = 500;
+    public int? BatchingMaxDelayMs { get; set; } = 500;
     }
     
 }

@@ -136,7 +136,8 @@ public class ProducerManagerTests
         // Assert
         Assert.Null(ex);
     }
-        [Fact]
+    
+    [Fact]
     [Description("Should throw when PublishAsync is called without connecting producer.")]
     public async Task PublishAsync_WithoutClient_Throws()
     {
