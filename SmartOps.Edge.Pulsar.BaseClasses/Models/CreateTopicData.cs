@@ -56,21 +56,22 @@ using System.Text.RegularExpressions;
 		/// Initializes a new instance of the <see cref="CreateTopicData"/> class.
 		/// </summary>
 		/// <param name="serviceUrl">The Pulsar service URL.</param>
-		/// <param name="name">The name of the topic to create.</param>
+		/// <param name="topicName">The name of the topic to create.</param>
 		/// <exception cref="ArgumentNullException">
-		/// Thrown if <paramref name="serviceUrl"/> or <paramref name="name"/> is null or empty,
-		/// or if <paramref name="name"/> is in an invalid format.
+		/// Thrown if <paramref name="serviceUrl"/> or <paramref name="topicName"/> is null or empty,
+		/// or if <paramref name="topicName"/> is in an invalid format.
 		/// </exception>
-		public CreateTopicData(string serviceUrl, string name)
+		public CreateTopicData(string serviceUrl, string topicName)
 		{
 			if (string.IsNullOrWhiteSpace(serviceUrl))
 				throw new ArgumentNullException(nameof(serviceUrl), "Service URL is required.");
-			if (string.IsNullOrWhiteSpace(name))
-				throw new ArgumentNullException(nameof(name), "Topic name is required.");
-			if (!ValidTopicNameRegex.IsMatch(name))
-				throw new ArgumentNullException(nameof(name), "Invalid topic name format. Allowed: alphanumeric, dots, dashes, and underscores.");
+			if (string.IsNullOrWhiteSpace(topicName))
+				throw new ArgumentNullException(nameof(topicName), "Topic name is required.");
+			if (!ValidTopicNameRegex.IsMatch(topicName))
+				throw new ArgumentNullException(nameof(topicName), "Invalid topic name format. Allowed: alphanumeric, dots, dashes, and underscores.");
 
 			ServiceUrl = serviceUrl;
-			TopicName = name;
+			TopicName = topicName;
 		}
 	}
+
