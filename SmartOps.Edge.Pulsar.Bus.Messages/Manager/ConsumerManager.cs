@@ -42,6 +42,8 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			_subscriptionType = subscriptionType;
 			_messagePrefetchCount = messagePrefetchCount > 0 ? messagePrefetchCount : throw new ArgumentException("Message prefetch count must be positive.");
 		}
+
+
 		/// <summary>
 		/// Initializes the connection to a Pulsar broker
 		/// </summary>
@@ -103,7 +105,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 					var consumerBuilder = _client.NewConsumer(Schema.ByteArray)
 						.SubscriptionName(_subscriptionName)
 						.Topic(topic)
-						.InitialPosition(SubscriptionInitialPosition.Latest)
+						.InitialPosition(SubscriptionInitialPosition.Earliest)
 						.SubscriptionType(_subscriptionType)
 						.MessagePrefetchCount(_messagePrefetchCount);
 
@@ -358,6 +360,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			return response;
 		}
 
+
 		/// <summary>
 		/// Asynchronously requests the Pulsar broker to redeliver specific unacknowledged messages identified by their message IDs,
 		/// allowing the consumer to retry processing them.
@@ -422,6 +425,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			return response;
 		}
 
+
 		/// <summary>
 		/// Asynchronously disposes of the <see cref="ConsumerManager"/> resources, closing and releasing the consumer and client connections to the Pulsar broker.
 		/// </summary>
@@ -467,6 +471,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 		{
 			_errorHandler = errorHandler;
 		}
+
 
 		/// <summary>
 		/// Gets the cancellation token for state change handling. Always returns <see cref="CancellationToken.None"/>,

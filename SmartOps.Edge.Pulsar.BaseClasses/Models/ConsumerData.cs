@@ -1,4 +1,5 @@
 ﻿using DotPulsar;
+
 namespace SmartOps.Edge.Pulsar.BaseClasses.Models
 {
 	public class ConsumerData

@@ -101,7 +101,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 			Console.WriteLine($"[DEBUG] Creating topic: PUT {topicPartitionsUrl} with {numPartitions} partitions");
 
 			var requestContent = new StringContent(numPartitions.ToString(), Encoding.UTF8, "application/json");
-			using var createResponse = await _httpClient.PutAsync(topicPartitionsUrl, requestContent);
+			var createResponse = await _httpClient.PutAsync(topicPartitionsUrl, requestContent);
 
 			if (!createResponse.IsSuccessStatusCode)
 			{
