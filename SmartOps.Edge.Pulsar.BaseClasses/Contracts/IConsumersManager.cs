@@ -22,6 +22,8 @@ namespace SmartOps.Edge.Pulsar.BaseClasses.Contracts
 		/// <param name="cancellationToken">A token used to signal cancellation and stop the subscription process.</param>
 		/// <returns>A task representing the asynchronous subscription operation.</returns>
 
+		//async Task SubscribeAsync(string topic, string subscriptionName, SubscriptionType subscriptionType, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken);
+
 		Task SubscribeAsync(string topic, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken);
 
 		/// <summary>

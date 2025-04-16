@@ -1,22 +1,19 @@
-﻿using System;
-
-namespace PulsarDemoApp
+﻿public class DemoMetrics
 {
-	public class DemoMetrics
-	{
-		public TimeSpan SetupTime { get; set; }
-		public int MessagesSent { get; set; }
-		public int MessagesReceived { get; set; }
-		public string Notes { get; set; } = string.Empty;
+	public string DemoName { get; set; } = "Demo";
+	public TimeSpan SetupTime { get; set; }
+	public int MessagesSent { get; set; }
+	public int MessagesReceived { get; set; }
+	public string Notes { get; set; } = string.Empty;
 
-		public void Display(string demoName)
-		{
-			Console.WriteLine($"--- {demoName} Metrics ---");
-			Console.WriteLine($"Setup Time: {SetupTime.TotalSeconds:F2}s");
-			Console.WriteLine($"Messages Sent: {MessagesSent}");
-			Console.WriteLine($"Messages Received: {MessagesReceived}");
-			Console.WriteLine($"Notes: {Notes}");
-			Console.WriteLine("-------------------");
-		}
+	public void Display(string demoPrefix)
+	{
+		Console.WriteLine($"\n=== {demoPrefix} Metrics ===");
+		Console.WriteLine($"Demo: {DemoName}");
+		Console.WriteLine($"Setup Time: {SetupTime.TotalSeconds:F2} seconds");
+		Console.WriteLine($"Messages Sent: {MessagesSent}");
+		Console.WriteLine($"Messages Received: {MessagesReceived}");
+		Console.WriteLine($"Notes: {Notes}");
+		Console.WriteLine("====================\n");
 	}
 }

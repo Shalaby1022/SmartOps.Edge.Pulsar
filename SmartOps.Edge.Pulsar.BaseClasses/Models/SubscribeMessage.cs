@@ -1,4 +1,5 @@
 ﻿using DotPulsar;
+using DotPulsar.Abstractions;
 
 namespace SmartOps.Edge.Pulsar.BaseClasses.Models
 {
@@ -48,5 +49,8 @@ namespace SmartOps.Edge.Pulsar.BaseClasses.Models
 		/// Gets or sets the error code associated with a consumption failure, empty for successful messages like those in Test Case 5.
 		/// </summary>
 		public string ErrorCode { get; set; }
+
+		public IConsumer<byte[]> Consumer { get; set; }
+
 	}
 }
