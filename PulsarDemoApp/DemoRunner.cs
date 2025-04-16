@@ -905,24 +905,23 @@ namespace PulsarDemoApp
 
 			await RunPulsarDemo4();
 		}
-
 		private async Task RunPulsarDemo4()
 		{
 			var metrics = new DemoMetrics { DemoName = "Per-Message Acknowledgment (Pulsar)" };
 			var stopwatch = Stopwatch.StartNew();
 			Console.WriteLine("\n=== Pulsar Demo 4 ===");
-			Console.WriteLine("Scenario: Send 10 messages, fail on #5, show redelivery of only #5.\n");
+			Console.WriteLine("Scenario: Send 10 messages, fail on #5 twice, show redelivery of only #5.\n");
 
 			ConsumerManager consumerManager = null;
 			ConcurrentBag<string> errors = new();
 			var messageCounts = new ConcurrentDictionary<string, int>();
 			var messagesReceived = new ConcurrentDictionary<string, List<string>>();
 			var redeliveryCounts = new ConcurrentDictionary<string, int>();
+			var task5ReceiveCount = 0;
 			string topicName = null;
 
 			try
 			{
-				// Create topic
 				topicName = $"OrderDemo4_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
 				var topicData = new CreateTopicData(_serviceUrl, topicName)
 				{
@@ -933,19 +932,16 @@ namespace PulsarDemoApp
 				};
 				var topicResponse = await _topicManager.CreateTopic(topicData);
 				if (!topicResponse.IsSuccess)
-				{
 					throw new Exception($"Topic creation failed: {topicResponse.Message}");
-				}
+
 				Console.WriteLine($"[SETUP] {topicResponse.Message}");
 				metrics.Notes += $"Topic creation: {topicResponse.Message}; ";
 
-				// Prepare
 				var cts = new CancellationTokenSource();
 				messageCounts["Consumer-1"] = 0;
 				messagesReceived["Consumer-1"] = new List<string>();
 				redeliveryCounts["Consumer-1"] = 0;
 
-				// Consumer logic
 				async Task RunConsumer()
 				{
 					consumerManager = new ConsumerManager(
@@ -980,6 +976,7 @@ namespace PulsarDemoApp
 								Console.WriteLine($"[Consumer-1] Error: {msg.ExceptionMessage} (Code: {msg.ErrorCode})");
 								return;
 							}
+
 							if (msg.MessageId == null || string.IsNullOrEmpty(msg.Data))
 							{
 								Console.WriteLine($"[Consumer-1] Warning: Invalid message, skipping.");
@@ -994,38 +991,29 @@ namespace PulsarDemoApp
 							messagesReceived["Consumer-1"].Add(msg.Data);
 							messageCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
 
-							if (taskId == 5 && redeliveryCounts["Consumer-1"] < 2) // Fail #5 twice
+							if (taskId == 5)
 							{
+								task5ReceiveCount++;
 								redeliveryCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
-								Console.WriteLine($"[Consumer-1] Simulating failure on message #5 (attempt {redeliveryCounts["Consumer-1"]}/2).");
-								throw new Exception("Processing failed for message #5");
-							}
+								if (task5ReceiveCount <= 2)
+								{
+									Console.WriteLine($"[Consumer-1] Simulating failure on message #5 (attempt {task5ReceiveCount}/2).");
 
-							bool acknowledged = false;
-							for (int attempt = 1; attempt <= 3; attempt++)
-							{
-								try
-								{
-									await msg.Consumer.Acknowledge(msg.MessageId);
-									acknowledged = true;
-									Console.WriteLine($"[Consumer-1] Acknowledged message.");
-									break;
-								}
-								catch (Exception ex)
-								{
-									Console.WriteLine($"[Consumer-1] Ack attempt {attempt}/3 failed: {ex.Message}");
-									if (attempt < 3)
-										await Task.Delay(100);
+									// ✅ Trigger redelivery for only this message
+									await msg.Consumer.RedeliverUnacknowledgedMessages(new[] { msg.MessageId });
+
+									throw new Exception("Simulated processing failure for message #5");
 								}
 							}
 
-							if (!acknowledged)
-							{
-								Console.WriteLine($"[Consumer-1] Failed to acknowledge message after 3 attempts.");
-							}
 
-							if (messageCounts["Consumer-1"] >= 10 && redeliveryCounts["Consumer-1"] >= 2)
+							await msg.Consumer.Acknowledge(msg.MessageId);
+							Console.WriteLine($"[Consumer-1] Acknowledged message.");
+
+							// Stop when all messages processed and #5 was seen 3 times
+							if (messageCounts["Consumer-1"] >= 12 && task5ReceiveCount >= 3)
 							{
+								Console.WriteLine("[Consumer-1] All expected messages processed, cancelling.");
 								cts.Cancel();
 							}
 						}
@@ -1038,12 +1026,10 @@ namespace PulsarDemoApp
 					}, cts.Token);
 				}
 
-				// Start consumer
 				var consumerTask = Task.Run(() => RunConsumer(), cts.Token);
-				await Task.Delay(1000, cts.Token); // Allow subscription (Demo 1 style)
+				await Task.Delay(1000, cts.Token); // Allow subscription
 				Console.WriteLine("[SETUP] Consumer subscribed.");
 
-				// Publish messages
 				var producerData = new ProducerData
 				{
 					ServiceUrl = _serviceUrl,
@@ -1062,13 +1048,9 @@ namespace PulsarDemoApp
 					await Task.Delay(100, cts.Token);
 				}
 
-				// Wait for consumer
 				try
 				{
-					await Task.WhenAny(
-						consumerTask,
-						Task.Delay(TimeSpan.FromSeconds(30), cts.Token)
-					);
+					await Task.WhenAny(consumerTask, Task.Delay(TimeSpan.FromSeconds(30), cts.Token));
 					if (!cts.IsCancellationRequested)
 					{
 						Console.WriteLine("[WARNING] Timeout waiting for consumer, canceling.");
@@ -1089,7 +1071,6 @@ namespace PulsarDemoApp
 			}
 			finally
 			{
-				// Display results
 				Console.WriteLine("\n=== Pulsar Demo 4 Results ===");
 				Console.WriteLine($"Topic: {topicName ?? "Not created"}");
 				Console.WriteLine($"Subscription: exclusive-sub");
@@ -1105,19 +1086,19 @@ namespace PulsarDemoApp
 				metrics.MessagesReceived = messageCounts.Values.Sum();
 				metrics.Notes += $"Total messages received: {metrics.MessagesReceived}; Redeliveries: {redeliveries}; ";
 				if (errors.Any())
-				{
 					metrics.Notes += $"Errors: {string.Join("; ", errors)}";
-				}
+
 				metrics.Display("Pulsar Demo 4");
 
 				if (consumerManager != null)
-				{
 					await consumerManager.DisposeAsync();
-				}
+
 				_producerManager.Dispose();
 				Console.WriteLine("[INFO] Resources disposed.");
 			}
 		}
+
+
 
 
 
