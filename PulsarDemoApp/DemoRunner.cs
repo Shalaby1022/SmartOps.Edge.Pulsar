@@ -904,7 +904,6 @@ namespace PulsarDemoApp
 			Console.WriteLine("Goal: Compare Pulsar's per-message acknowledgment with Kafka's offset-based commits.\n");
 
 			await RunPulsarDemo4();
-		
 		}
 
 		private async Task RunPulsarDemo4()
@@ -942,8 +941,6 @@ namespace PulsarDemoApp
 
 				// Prepare
 				var cts = new CancellationTokenSource();
-				var readySignal = new TaskCompletionSource<bool>();
-				var pendingAck = new TaskCompletionSource<bool>();
 				messageCounts["Consumer-1"] = 0;
 				messagesReceived["Consumer-1"] = new List<string>();
 				redeliveryCounts["Consumer-1"] = 0;
@@ -958,117 +955,95 @@ namespace PulsarDemoApp
 							Console.WriteLine(error);
 							errors.Add(error);
 						},
-						subscriptionType: SubscriptionType.Shared,
+						subscriptionType: SubscriptionType.Exclusive,
 						messagePrefetchCount: 10
 					);
 
-					try
+					var consumerData = new ConsumerData
 					{
-						var consumerData = new ConsumerData
-						{
-							ServiceUrl = _serviceUrl,
-							TopicName = $"persistent://public/default/{topicName}",
-							SubscriptionName = "shared-sub",
-							SubscriptionType = SubscriptionType.Shared
-						};
-						consumerManager.ConnectConsumer(consumerData, (c, ex) =>
-							Console.WriteLine($"[ERROR] Consumer-1: {ex.Message}"));
+						ServiceUrl = _serviceUrl,
+						TopicName = $"persistent://public/default/{topicName}",
+						SubscriptionName = "exclusive-sub",
+						SubscriptionType = SubscriptionType.Exclusive
+					};
 
-						Console.WriteLine($"[Consumer-1] Subscribing to {topicName}...");
-						await consumerManager.SubscribeAsync(consumerData.TopicName, async msg =>
+					consumerManager.ConnectConsumer(consumerData, (c, ex) =>
+						Console.WriteLine($"[ERROR] Consumer-1: {ex.Message}"));
+
+					Console.WriteLine("[Consumer-1] Subscribing...");
+					await consumerManager.SubscribeAsync(consumerData.TopicName, async msg =>
+					{
+						try
 						{
-							try
+							if (!string.IsNullOrEmpty(msg.ExceptionMessage))
 							{
-								if (!string.IsNullOrEmpty(msg.ExceptionMessage))
+								Console.WriteLine($"[Consumer-1] Error: {msg.ExceptionMessage} (Code: {msg.ErrorCode})");
+								return;
+							}
+							if (msg.MessageId == null || string.IsNullOrEmpty(msg.Data))
+							{
+								Console.WriteLine($"[Consumer-1] Warning: Invalid message, skipping.");
+								return;
+							}
+
+							var taskId = msg.Data.Contains("taskId") ? int.Parse(msg.Data.Split("\"taskId\": ")[1].Split('}')[0]) : 0;
+							Console.ForegroundColor = ConsoleColor.Cyan;
+							Console.WriteLine($"[Consumer-1] Received: {msg.Data} (MessageId: {msg.MessageId})");
+							Console.ResetColor();
+
+							messagesReceived["Consumer-1"].Add(msg.Data);
+							messageCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
+
+							if (taskId == 5 && redeliveryCounts["Consumer-1"] < 2) // Fail #5 twice
+							{
+								redeliveryCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
+								Console.WriteLine($"[Consumer-1] Simulating failure on message #5 (attempt {redeliveryCounts["Consumer-1"]}/2).");
+								throw new Exception("Processing failed for message #5");
+							}
+
+							bool acknowledged = false;
+							for (int attempt = 1; attempt <= 3; attempt++)
+							{
+								try
 								{
-									Console.WriteLine($"[Consumer-1] Error: {msg.ExceptionMessage} (Code: {msg.ErrorCode})");
-									return;
+									await msg.Consumer.Acknowledge(msg.MessageId);
+									acknowledged = true;
+									Console.WriteLine($"[Consumer-1] Acknowledged message.");
+									break;
 								}
-								if (msg.MessageId == null || string.IsNullOrEmpty(msg.Data))
+								catch (Exception ex)
 								{
-									Console.WriteLine($"[Consumer-1] Warning: Invalid message, skipping.");
-									return;
-								}
-
-								var taskId = msg.Data.Contains("taskId") ? int.Parse(msg.Data.Split("\"taskId\": ")[1].Split(',')[0]) : 0;
-								Console.ForegroundColor = ConsoleColor.Cyan;
-								Console.WriteLine($"[Consumer-1] Received: {msg.Data} (MessageId: {msg.MessageId})");
-								Console.ResetColor();
-
-								messagesReceived["Consumer-1"].Add(msg.Data);
-								messageCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
-
-								if (taskId == 5 && redeliveryCounts["Consumer-1"] < 2) // Fail #5 twice
-								{
-									redeliveryCounts.AddOrUpdate("Consumer-1", 1, (k, v) => v + 1);
-									Console.WriteLine($"[Consumer-1] Simulating failure on message #5 (attempt {redeliveryCounts["Consumer-1"]}/2).");
-									throw new Exception("Processing failed for message #5");
-								}
-
-								bool acknowledged = false;
-								for (int attempt = 1; attempt <= 3; attempt++)
-								{
-									try
-									{
-										await msg.Consumer.Acknowledge(msg.MessageId);
-										acknowledged = true;
-										Console.WriteLine($"[Consumer-1] Acknowledged message.");
-										break;
-									}
-									catch (Exception ex)
-									{
-										Console.WriteLine($"[Consumer-1] Ack attempt {attempt}/3 failed: {ex.Message}");
-										if (attempt < 3)
-											await Task.Delay(100);
-									}
-								}
-
-								if (!acknowledged)
-								{
-									Console.WriteLine($"[Consumer-1] Failed to acknowledge message after 3 attempts.");
-								}
-
-								if (messageCounts["Consumer-1"] >= 10 && redeliveryCounts["Consumer-1"] >= 2)
-								{
-									pendingAck.TrySetResult(true);
+									Console.WriteLine($"[Consumer-1] Ack attempt {attempt}/3 failed: {ex.Message}");
+									if (attempt < 3)
+										await Task.Delay(100);
 								}
 							}
-							catch (Exception ex)
-							{
-								string error = $"[Consumer-1] Error processing message: {ex.Message}";
-								Console.WriteLine(error);
-								errors.Add(error);
-							}
-						}, cts.Token);
 
-						Console.WriteLine($"[Consumer-1] Setting ready signal...");
-						readySignal.SetResult(true);
-						Console.WriteLine($"[Consumer-1] Ready signal set.");
-					}
-					catch (Exception ex)
-					{
-						string error = $"[Consumer-1] Subscription failed: {ex.Message}";
-						Console.WriteLine(error);
-						errors.Add(error);
-						pendingAck.TrySetResult(true);
-					}
+							if (!acknowledged)
+							{
+								Console.WriteLine($"[Consumer-1] Failed to acknowledge message after 3 attempts.");
+							}
+
+							if (messageCounts["Consumer-1"] >= 10 && redeliveryCounts["Consumer-1"] >= 2)
+							{
+								cts.Cancel();
+							}
+						}
+						catch (Exception ex)
+						{
+							string error = $"[Consumer-1] Error processing message: {ex.Message}";
+							Console.WriteLine(error);
+							errors.Add(error);
+						}
+					}, cts.Token);
 				}
 
 				// Start consumer
-				var consumerTask = RunConsumer();
+				var consumerTask = Task.Run(() => RunConsumer(), cts.Token);
+				await Task.Delay(1000, cts.Token); // Allow subscription (Demo 1 style)
+				Console.WriteLine("[SETUP] Consumer subscribed.");
 
-				// Wait for subscription
-				await Task.WhenAny(readySignal.Task, Task.Delay(TimeSpan.FromSeconds(10), cts.Token));
-				if (!readySignal.Task.IsCompleted)
-				{
-					Console.WriteLine("[ERROR] Timeout waiting for consumer subscription.");
-					errors.Add("Timeout waiting for consumer subscription");
-					cts.Cancel();
-					throw new Exception("Consumer subscription timed out");
-				}
-				Console.WriteLine("[SETUP] Consumer subscribed to topic.");
-
-				// Connect producer
+				// Publish messages
 				var producerData = new ProducerData
 				{
 					ServiceUrl = _serviceUrl,
@@ -1076,31 +1051,36 @@ namespace PulsarDemoApp
 					EnableBatching = false
 				};
 				await _producerManager.ConnectProducer(producerData);
-				Console.WriteLine("[SETUP] Producer connected to topic.");
+				Console.WriteLine("[SETUP] Producer connected.");
 
-				// Send 10 messages
 				for (int i = 1; i <= 10; i++)
 				{
-					var message = $"{{ \"taskId\": {i}, \"type\": \"process\" }}";
+					var message = $"{{ \"taskId\": {i} }}";
 					await _producerManager.PublishAsync(producerData.TopicName, message, $"corr-{i}");
 					metrics.MessagesSent++;
 					Console.WriteLine($"[PRODUCER] Sent message {i}: {message}");
-					await Task.Delay(50);
+					await Task.Delay(100, cts.Token);
 				}
 
-				// Wait for completion
-				await Task.WhenAny(
-					consumerTask,
-					pendingAck.Task,
-					Task.Delay(TimeSpan.FromSeconds(30), cts.Token)
-				);
-				if (!pendingAck.Task.IsCompleted)
+				// Wait for consumer
+				try
 				{
-					Console.WriteLine("[WARNING] Timeout waiting for consumer, canceling.");
-					errors.Add("Timeout waiting for consumer");
-					cts.Cancel();
+					await Task.WhenAny(
+						consumerTask,
+						Task.Delay(TimeSpan.FromSeconds(30), cts.Token)
+					);
+					if (!cts.IsCancellationRequested)
+					{
+						Console.WriteLine("[WARNING] Timeout waiting for consumer, canceling.");
+						errors.Add("Timeout waiting for consumer");
+						cts.Cancel();
+					}
+					await consumerTask;
 				}
-				await Task.WhenAll(pendingAck.Task);
+				catch (OperationCanceledException)
+				{
+					Console.WriteLine("[INFO] Consumer completed processing.");
+				}
 			}
 			catch (Exception ex)
 			{
@@ -1112,7 +1092,7 @@ namespace PulsarDemoApp
 				// Display results
 				Console.WriteLine("\n=== Pulsar Demo 4 Results ===");
 				Console.WriteLine($"Topic: {topicName ?? "Not created"}");
-				Console.WriteLine($"Subscription: shared-sub");
+				Console.WriteLine($"Subscription: exclusive-sub");
 				Console.WriteLine("Consumer   | Messages Received | Redeliveries | Sample Messages");
 				Console.WriteLine("-----------|-------------------|--------------|----------------");
 				var count = messageCounts.GetValueOrDefault("Consumer-1", 0);
@@ -1138,6 +1118,7 @@ namespace PulsarDemoApp
 				Console.WriteLine("[INFO] Resources disposed.");
 			}
 		}
+
 
 
 
