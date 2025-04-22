@@ -16,6 +16,8 @@ namespace SmartOps.Edge.Pulsar.BaseClasses.Contracts
 		/// The task result contains a <see cref="BaseResponse"/> indicating the outcome.
 		/// </returns>
 		Task<BaseResponse> CreateTopic(CreateTopicData topicData);
+
+
 	}
 }
 

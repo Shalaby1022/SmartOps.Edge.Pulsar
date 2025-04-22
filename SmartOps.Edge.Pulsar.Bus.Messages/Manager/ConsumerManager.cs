@@ -353,7 +353,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 				var messages = new List<SubscribeMessage<string>>(consumerData.BatchSize);
 				int effectiveBatchSize = consumerData.BatchSize;
 				long totalBytes = 0;
-				const long memoryThreshold = 1024 * 1024 * 500; // 500MB , I just add it to prevent memory overload
+				const long memoryThreshold = 1024 * 1024 * 2000; // 500MB , I just add it to prevent memory overload
 				using var timeoutCts = new CancellationTokenSource(consumerData.TimeoutMs);
 				using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
