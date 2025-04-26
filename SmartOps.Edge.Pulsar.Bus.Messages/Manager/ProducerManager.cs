@@ -123,7 +123,11 @@ public class ProducerManager : IProducerManager
                         await producer.Send(data);
                     }
                     sent = true;
+
+                    //Console.WriteLine($"[PublishBatchAsync] Sent message: {msg}");
+
                     Console.WriteLine($"[PublishBatchAsync] Sent message: {msg}");
+
                     Console.Out.Flush();
                 }
                 catch (Exception ex)

@@ -30,4 +30,6 @@ public interface IProducerManager : IDisposable
     /// <param name="maxRetries">The maximum number of retry attempts for each message in case of failure. Defaults to 3.</param>
     /// <returns>A task representing the asynchronous batch publish operation.</returns>
     Task PublishBatchAsync(string topicName, IEnumerable<string> messages, string? correlationId = null, int maxRetries = 3);
+
+	  void Dispose();
 }

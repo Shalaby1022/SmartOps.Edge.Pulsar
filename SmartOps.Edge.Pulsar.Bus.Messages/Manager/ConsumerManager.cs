@@ -4,6 +4,7 @@ using DotPulsar.Extensions;
 using SmartOps.Edge.Pulsar.BaseClasses.Contracts;
 using SmartOps.Edge.Pulsar.BaseClasses.Models;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Text;
 
 
@@ -13,6 +14,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 	{
 		private IPulsarClient? _client;
 		private IConsumer<byte[]>? _consumer;
+		private readonly ConcurrentDictionary<string, IConsumer<byte[]>> _consumerMap = new();
 		private bool _stopSubs = false;
 		private string? _subscriptionName;
 		private readonly Action<IConsumer<byte[]>, Exception>? _errorHandler;
@@ -42,6 +44,8 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			_subscriptionType = subscriptionType;
 			_messagePrefetchCount = messagePrefetchCount > 0 ? messagePrefetchCount : throw new ArgumentException("Message prefetch count must be positive.");
 		}
+
+
 		/// <summary>
 		/// Initializes the connection to a Pulsar broker
 		/// </summary>
@@ -74,17 +78,6 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 				throw;
 			}
 		}
-
-		/// <summary>
-		/// Subscribes to a Pulsar topic asynchronously and consumes messages, passing each message or error to the provided callback.
-		/// </summary>
-		/// <param name="topic">The fully qualified topic name to subscribe to (e.g., "persistent://public/default/test-topic").</param>
-		/// <param name="callback">An asynchronous callback function that processes each consumed message or handles errors.</param>
-		/// <param name="cancellationToken">A token to cancel the subscription and message consumption process.</param>
-		/// <returns>A <see cref="Task"/> that completes when the subscription ends (e.g., canceled or errored).</returns>
-		/// <exception cref="InvalidOperationException">Thrown when the Pulsar client is not connected (i.e., <see cref="ConnectConsumer"/> has not been called).</exception>
-		/// <exception cref="ArgumentException">Thrown when <paramref name="topic"/> is null or empty.</exception>
-		/// <exception cref="PulsarClientException">Thrown when subscription or message consumption fails due to broker issues.</exception>
 		public async Task SubscribeAsync(string topic, Func<SubscribeMessage<string>, Task> callback, CancellationToken cancellationToken)
 		{
 			if (_client == null) throw new InvalidOperationException("Client not connected.");
@@ -92,48 +85,65 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 
 			try
 			{
-				if (_consumer == null || _consumer.Topic != topic)
+				var key = $"{topic}::{_subscriptionName}";
+
+				// Dispose any existing consumer with the same key
+				if (_consumerMap.TryRemove(key, out var existingConsumer))
 				{
-					if (_consumer != null)
-					{
-						await _consumer.DisposeAsync();
-						Console.WriteLine($"[INFO] Previous consumer disposed");
-					}
-
-					var consumerBuilder = _client.NewConsumer(Schema.ByteArray)
-						.SubscriptionName(_subscriptionName)
-						.Topic(topic)
-						.InitialPosition(SubscriptionInitialPosition.Latest)
-						.SubscriptionType(_subscriptionType)
-						.MessagePrefetchCount(_messagePrefetchCount);
-
-					if (_errorHandler != null)
-					{
-						consumerBuilder.StateChangedHandler(new StateChangedHandler(_errorHandler));
-					}
-
-					_consumer = consumerBuilder.Create();
-					Console.WriteLine($"[INFO] Subscribed to topic: {topic} with {_subscriptionType}");
+					await existingConsumer.DisposeAsync();
+					Console.WriteLine($"[INFO] Disposed previous consumer for subscription: {_subscriptionName}");
 				}
 
-				_stopSubs = false;
+				var consumerBuilder = _client.NewConsumer(Schema.ByteArray)
+					.SubscriptionName(_subscriptionName)
+					.Topic(topic)
+					.InitialPosition(SubscriptionInitialPosition.Earliest)
+					.SubscriptionType(_subscriptionType)
+					.MessagePrefetchCount(_messagePrefetchCount);
 
-				await foreach (var message in _consumer.Messages().WithCancellation(cancellationToken))
+				if (_errorHandler != null)
 				{
-					if (_stopSubs || cancellationToken.IsCancellationRequested) break;
+					consumerBuilder.StateChangedHandler(new StateChangedHandler(_errorHandler));
+				}
+
+				var consumer = consumerBuilder.Create();
+				_consumerMap[key] = consumer;
+
+				Console.WriteLine($"[INFO] Subscribed to topic: {topic} with subscription {_subscriptionName}");
+
+				// Properly await the loop so the consumer remains active
+				await foreach (var message in consumer.Messages().WithCancellation(cancellationToken))
+				{
+					if (_stopSubs || cancellationToken.IsCancellationRequested)
+						break;
 
 					var content = Encoding.UTF8.GetString(message.Data.ToArray());
 					var subscribeMessage = new SubscribeMessage<string>
 					{
 						Data = content,
-						Topic = _consumer.Topic,
+						Topic = consumer.Topic,
 						MessageId = message.MessageId,
-						UnixTimeStampMs = (long)message.PublishTime
+						UnixTimeStampMs = (long)message.PublishTime,
+						Consumer = consumer
 					};
 
-					Console.WriteLine($"[INFO] Consumed message from {_consumer.Topic}");
-					await callback(subscribeMessage);
+					// Run callback concurrently — but don't wrap outer loop in Task.Run
+					_ = Task.Run(async () =>
+					{
+						try
+						{
+							await callback(subscribeMessage);
+						}
+						catch (Exception ex)
+						{
+							Console.WriteLine($"[ERROR] Callback error: {ex.Message}");
+						}
+					});
 				}
+			}
+			catch (OperationCanceledException)
+			{
+				Console.WriteLine($"[INFO] Subscription to topic '{topic}' with '{_subscriptionName}' was canceled as expected.");
 			}
 			catch (Exception ex)
 			{
@@ -141,12 +151,11 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 				var errorMessage = new SubscribeMessage<string>
 				{
 					ExceptionMessage = ex.Message,
-					ErrorCode = ex is OperationCanceledException ? "REQUESTED_ABORTED" : "SUBSCRIBE_ERROR"
+					ErrorCode = "SUBSCRIBE_ERROR"
 				};
 				await callback(errorMessage);
 			}
 		}
-
 		/// <summary>
 		/// Asynchronously processes a batch of messages from a Pulsar topic, adhering to specified size, byte, and timeout constraints.
 		/// </summary>
@@ -207,7 +216,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 				var messages = new List<SubscribeMessage<string>>(consumerData.BatchSize);
 				int effectiveBatchSize = consumerData.BatchSize;
 				long totalBytes = 0;
-				const long memoryThreshold = 1024 * 1024 * 500; // 500MB , I just add it to prevent memory overload
+				const long memoryThreshold = 1024 * 1024 * 2000; // 500MB , I just add it to prevent memory overload
 				using var timeoutCts = new CancellationTokenSource(consumerData.TimeoutMs);
 				using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
@@ -358,6 +367,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			return response;
 		}
 
+
 		/// <summary>
 		/// Asynchronously requests the Pulsar broker to redeliver specific unacknowledged messages identified by their message IDs,
 		/// allowing the consumer to retry processing them.
@@ -422,6 +432,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			return response;
 		}
 
+
 		/// <summary>
 		/// Asynchronously disposes of the <see cref="ConsumerManager"/> resources, closing and releasing the consumer and client connections to the Pulsar broker.
 		/// </summary>
@@ -468,6 +479,7 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 			_errorHandler = errorHandler;
 		}
 
+
 		/// <summary>
 		/// Gets the cancellation token for state change handling. Always returns <see cref="CancellationToken.None"/>,
 		/// indicating cancellation is not supported.
@@ -490,3 +502,4 @@ namespace SmartOps.Edge.Pulsar.Bus.Messages.Manager
 		}
 	}
 }
+
