@@ -22,13 +22,10 @@ namespace PulsarDemoApp
 
 			// Run all demos
 			var demos = provider.GetRequiredService<PulsarDemos>();
-			//await demos.RunDemo1();
+			await demos.RunDemo1();
 			//await demos.RunDemo2();
-			await demos.RunDemo3();
-			// demos.RunDemo4();
-			//await demos.RunDemo5();
-			//await demos.RunDemo6();
-			//await demos.RunDemo7();
+			//await demos.RunDemo3();
+			//await demos.RunDemo4();
 
 			Console.WriteLine("=== All Pulsar Demos Complete ===");
 		}
