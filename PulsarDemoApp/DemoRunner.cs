@@ -26,6 +26,8 @@ namespace PulsarDemoApp
 			response.EnsureSuccessStatusCode();
 		}
 
+		// There's no actual usage for it here in the demo but i was having an issue when i didn't know about the standalone.conf
+		// and was trying to change the broker.conf but still get the issue that it starts with 6 and it should be.
 		public async Task<int> GetBundleCountAsync(string tenant, string namespaceName)
 		{
 			try
@@ -45,13 +47,13 @@ namespace PulsarDemoApp
 				return 0;
 			}
 		}
-
 		public void Dispose()
 		{
 			_httpClient.Dispose();
 		}
 	}
 
+	// used to check for auto-topic bundles when start and finish to manually check if the dynamic splitting ocurrred.
 	public class BundleData
 	{
 		public List<string> Boundaries { get; set; }
