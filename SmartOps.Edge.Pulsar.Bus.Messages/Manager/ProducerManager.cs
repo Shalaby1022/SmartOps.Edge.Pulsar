@@ -64,8 +64,8 @@ public class ProducerManager : IProducerManager
             {
                 TopicName = t,
                 EnableBatching = true,
-                BatchingMaxMessages = 5000,
-                BatchingMaxDelayMs = 5
+                BatchingMaxMessages = 100,
+                BatchingMaxDelayMs = 500
             }));
 
             var data = Encoding.UTF8.GetBytes(message);
@@ -123,7 +123,11 @@ public class ProducerManager : IProducerManager
                         await producer.Send(data);
                     }
                     sent = true;
+
                     //Console.WriteLine($"[PublishBatchAsync] Sent message: {msg}");
+
+                    Console.WriteLine($"[PublishBatchAsync] Sent message: {msg}");
+
                     Console.Out.Flush();
                 }
                 catch (Exception ex)

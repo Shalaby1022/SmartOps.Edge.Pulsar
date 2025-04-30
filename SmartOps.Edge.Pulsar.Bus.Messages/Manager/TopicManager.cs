@@ -181,7 +181,7 @@ namespace SmartOps.Edge.Pulsar.Messages.Manager
 		/// </summary>
 		protected static string ConvertToAdminUrl(string serviceUrl)
 		{
-			return serviceUrl.Replace("pulsar://", "http://").Replace(":6650", ":8080");
+			return serviceUrl.Replace("pulsar://", "http://").Replace(":6650", ":8081");
 		}
 		#endregion Utility Methods
 

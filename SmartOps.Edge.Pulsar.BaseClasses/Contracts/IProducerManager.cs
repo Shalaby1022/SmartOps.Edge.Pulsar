@@ -31,5 +31,5 @@ public interface IProducerManager : IDisposable
     /// <returns>A task representing the asynchronous batch publish operation.</returns>
     Task PublishBatchAsync(string topicName, IEnumerable<string> messages, string? correlationId = null, int maxRetries = 3);
 
-	void Dispose();
+	  void Dispose();
 }
